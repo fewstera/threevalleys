@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(for d in /Users/fewstera/Desktop/app/prod-cdapp-bff.s3.eu-west-3.amazonaws.com/map/tiles/troisVallees/3/*/)",
+      "Bash(sips:*)"
+    ]
+  }
+}

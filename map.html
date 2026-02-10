@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trois Vallées Map</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a1a; overflow: hidden; width: 100vw; height: 100vh; }
+  #viewport {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    cursor: grab;
+  }
+  #viewport.grabbing { cursor: grabbing; }
+  .map-container {
+    position: relative;
+    width: 3035px;
+    height: 1610px;
+    transform-origin: 0 0;
+    overflow: hidden;
+  }
+  .map-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 512px);
+    grid-template-rows: repeat(4, 512px);
+  }
+  .map-grid img {
+    width: 512px;
+    height: 512px;
+    display: block;
+    -webkit-user-drag: none;
+    user-select: none;
+    pointer-events: none;
+  }
+  .map-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 3035px;
+    height: 1610px;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="viewport">
+  <div class="map-container" id="map">
+    <div class="map-grid">
+      <img src="./map/tiles/0_0.jpg"><img src="./map/tiles/1_0.jpg"><img src="./map/tiles/2_0.jpg"><img src="./map/tiles/3_0.jpg"><img src="./map/tiles/4_0.jpg"><img src="./map/tiles/5_0.jpg">
+      <img src="./map/tiles/0_1.jpg"><img src="./map/tiles/1_1.jpg"><img src="./map/tiles/2_1.jpg"><img src="./map/tiles/3_1.jpg"><img src="./map/tiles/4_1.jpg"><img src="./map/tiles/5_1.jpg">
+      <img src="./map/tiles/0_2.jpg"><img src="./map/tiles/1_2.jpg"><img src="./map/tiles/2_2.jpg"><img src="./map/tiles/3_2.jpg"><img src="./map/tiles/4_2.jpg"><img src="./map/tiles/5_2.jpg">
+      <img src="./map/tiles/0_3.jpg"><img src="./map/tiles/1_3.jpg"><img src="./map/tiles/2_3.jpg"><img src="./map/tiles/3_3.jpg"><img src="./map/tiles/4_3.jpg"><img src="./map/tiles/5_3.jpg">
+    </div>
+    <svg class="map-overlay" viewBox="0 0 1 1" preserveAspectRatio="none" id="overlay"></svg>
+  </div>
+</div>
+<script>
+const SLOPE_COLORS = {
+  GREEN: '#22c55e',
+  BLUE: '#3b82f6',
+  RED: '#ef4444',
+  BLACK: '#000000',
+};
+
+fetch('./1770682226734_troisVallees_GeospatialItems.json')
+  .then(r => r.json())
+  .then(data => {
+    const svg = document.getElementById('overlay');
+    const ns = 'http://www.w3.org/2000/svg';
+
+    const labels = [];
+
+    // Draw slope lines
+    for (const slope of data.slopes) {
+      const color = SLOPE_COLORS[slope.slopeLevel] || '#888';
+
+      for (const path of slope.paths) {
+        const points = path.points.map(p => `${p.x},${p.y}`).join(' ');
+        const line = document.createElementNS(ns, 'polyline');
+        line.setAttribute('fill', 'none');
+        line.setAttribute('stroke', color);
+        line.setAttribute('stroke-width', '0.001');
+        line.setAttribute('stroke-linecap', 'round');
+        line.setAttribute('stroke-linejoin', 'round');
+        line.setAttribute('points', points);
+        svg.appendChild(line);
+      }
+
+      if (slope.namePosition) {
+        labels.push({ type: 'slope', color, item: slope });
+      }
+    }
+
+    // Draw lift lines
+    for (const lift of data.lifts) {
+      for (const path of lift.paths) {
+        const points = path.points.map(p => `${p.x},${p.y}`).join(' ');
+        const line = document.createElementNS(ns, 'polyline');
+        line.setAttribute('fill', 'none');
+        line.setAttribute('stroke', '#7c3aed');
+        line.setAttribute('stroke-width', '0.001');
+        line.setAttribute('stroke-linecap', 'round');
+        line.setAttribute('stroke-linejoin', 'round');
+        line.setAttribute('stroke-dasharray', '0.002,0.001');
+        line.setAttribute('points', points);
+        svg.appendChild(line);
+      }
+
+      if (lift.namePosition) {
+        labels.push({ type: 'lift', item: lift });
+      }
+    }
+
+    // Draw all labels on top
+    for (const entry of labels) {
+      const { item } = entry;
+      const np = item.namePosition;
+
+      if (entry.type === 'slope') {
+        const dot = document.createElementNS(ns, 'circle');
+        dot.setAttribute('cx', np.x);
+        dot.setAttribute('cy', np.y);
+        dot.setAttribute('r', '0.0015');
+        dot.setAttribute('fill', entry.color);
+        svg.appendChild(dot);
+      }
+
+      const text = item.name || item.shortName || '';
+      const isLift = entry.type === 'lift';
+      const fontSize = '0.0025';
+      const anchor = isLift ? 'middle' : 'start';
+      const fill = isLift ? '#7c3aed' : '#222';
+
+      const halo = document.createElementNS(ns, 'text');
+      halo.setAttribute('x', np.x);
+      halo.setAttribute('y', np.y);
+      halo.setAttribute('fill', 'none');
+      halo.setAttribute('stroke', 'white');
+      halo.setAttribute('stroke-width', '0.0005');
+      halo.setAttribute('font-size', fontSize);
+      halo.setAttribute('font-family', 'sans-serif');
+      halo.setAttribute('font-weight', 'bold');
+      halo.setAttribute('text-anchor', anchor);
+      if (isLift && item.nameRotation) {
+        halo.setAttribute('transform', `rotate(${item.nameRotation - 360}, ${np.x}, ${np.y})`);
+      }
+      halo.textContent = text;
+      svg.appendChild(halo);
+
+      const label = document.createElementNS(ns, 'text');
+      label.setAttribute('x', np.x);
+      label.setAttribute('y', np.y);
+      label.setAttribute('fill', fill);
+      label.setAttribute('font-size', fontSize);
+      label.setAttribute('font-family', 'sans-serif');
+      label.setAttribute('font-weight', 'bold');
+      label.setAttribute('text-anchor', anchor);
+      if (isLift && item.nameRotation) {
+        label.setAttribute('transform', `rotate(${item.nameRotation - 360}, ${np.x}, ${np.y})`);
+      }
+      label.textContent = text;
+      svg.appendChild(label);
+    }
+  });
+
+// Pan & zoom
+const viewport = document.getElementById('viewport');
+const map = document.getElementById('map');
+
+let scale = 1;
+let panX = 0;
+let panY = 0;
+let isDragging = false;
+let startX, startY;
+
+const MAP_W = 3035;
+const MAP_H = 1610;
+
+function clampPan() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const scaledW = MAP_W * scale;
+  const scaledH = MAP_H * scale;
+
+  if (scaledW <= vw) {
+    panX = (vw - scaledW) / 2;
+  } else {
+    panX = Math.min(0, Math.max(vw - scaledW, panX));
+  }
+
+  if (scaledH <= vh) {
+    panY = (vh - scaledH) / 2;
+  } else {
+    panY = Math.min(0, Math.max(vh - scaledH, panY));
+  }
+}
+
+function applyTransform() {
+  clampPan();
+  map.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+}
+
+viewport.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const rect = viewport.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+
+  const prevScale = scale;
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  const minScale = Math.max(window.innerWidth / MAP_W, window.innerHeight / MAP_H);
+  scale = Math.min(Math.max(scale * delta, minScale), 5);
+
+  // Zoom towards cursor
+  panX = mouseX - (mouseX - panX) * (scale / prevScale);
+  panY = mouseY - (mouseY - panY) * (scale / prevScale);
+
+  applyTransform();
+}, { passive: false });
+
+viewport.addEventListener('mousedown', (e) => {
+  isDragging = true;
+  startX = e.clientX - panX;
+  startY = e.clientY - panY;
+  viewport.classList.add('grabbing');
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  panX = e.clientX - startX;
+  panY = e.clientY - startY;
+  applyTransform();
+});
+
+window.addEventListener('mouseup', () => {
+  isDragging = false;
+  viewport.classList.remove('grabbing');
+});
+
+// Fit map to viewport on load
+const vw = window.innerWidth;
+const vh = window.innerHeight;
+scale = Math.max(vw / MAP_W, vh / MAP_H);
+panX = (vw - 3035 * scale) / 2;
+panY = (vh - 1610 * scale) / 2;
+applyTransform();
+</script>
+</body>
+</html>
