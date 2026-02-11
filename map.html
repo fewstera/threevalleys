@@ -21,14 +21,9 @@
     transform-origin: 0 0;
     overflow: hidden;
   }
-  .map-grid {
-    display: grid;
-    grid-template-columns: repeat(6, 512px);
-    grid-template-rows: repeat(4, 512px);
-  }
-  .map-grid img {
-    width: 512px;
-    height: 512px;
+  .map-bg {
+    width: 3072px;
+    height: 2048px;
     display: block;
     -webkit-user-drag: none;
     user-select: none;
@@ -42,18 +37,93 @@
     height: 1610px;
     pointer-events: none;
   }
+  .labels-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 3035px;
+    height: 1610px;
+    pointer-events: none;
+  }
+  .map-label {
+    position: absolute;
+    font-family: sans-serif;
+    font-weight: bold;
+    font-size: 7px;
+    white-space: nowrap;
+    text-shadow: -1px 0 1px white, 1px 0 1px white, 0 -1px 1px white, 0 1px 1px white, -1px -1px 1px white, 1px -1px 1px white, -1px 1px 1px white, 1px 1px 1px white;
+  }
+  #controls {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-family: sans-serif;
+    font-size: 13px;
+  }
+  #controls .group {
+    background: rgba(255,255,255,0.92);
+    border-radius: 8px;
+    padding: 8px 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  #controls .group-title {
+    font-weight: bold;
+    margin-bottom: 4px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #555;
+  }
+  #controls button {
+    display: block;
+    width: 100%;
+    padding: 4px 8px;
+    margin: 2px 0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 12px;
+    text-align: left;
+  }
+  #controls button:hover { background: #f0f0f0; }
+  #controls button.active { background: #e0e7ff; border-color: #7c3aed; }
+  #controls .stats {
+    font-size: 11px;
+    color: #666;
+    margin-top: 4px;
+  }
 </style>
 </head>
 <body>
+<div id="controls">
+  <div class="group">
+    <div class="group-title">Slopes</div>
+    <button id="btn-slopes-all" class="active">Show All</button>
+    <button id="btn-slopes-completed">Show Completed</button>
+    <button id="btn-slopes-remaining">Show Remaining</button>
+    <button id="btn-slopes-hide">Hide All</button>
+    <div class="stats" id="slopes-stats"></div>
+  </div>
+  <div class="group">
+    <div class="group-title">Lifts</div>
+    <button id="btn-lifts-all" class="active">Show All</button>
+    <button id="btn-lifts-completed">Show Completed</button>
+    <button id="btn-lifts-remaining">Show Remaining</button>
+    <button id="btn-lifts-hide">Hide All</button>
+    <div class="stats" id="lifts-stats"></div>
+  </div>
+  <button id="btn-refresh" style="width:100%;padding:6px 8px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;font-size:12px;">Refresh Data</button>
+</div>
 <div id="viewport">
   <div class="map-container" id="map">
-    <div class="map-grid">
-      <img src="./map/tiles/0_0.jpg"><img src="./map/tiles/1_0.jpg"><img src="./map/tiles/2_0.jpg"><img src="./map/tiles/3_0.jpg"><img src="./map/tiles/4_0.jpg"><img src="./map/tiles/5_0.jpg">
-      <img src="./map/tiles/0_1.jpg"><img src="./map/tiles/1_1.jpg"><img src="./map/tiles/2_1.jpg"><img src="./map/tiles/3_1.jpg"><img src="./map/tiles/4_1.jpg"><img src="./map/tiles/5_1.jpg">
-      <img src="./map/tiles/0_2.jpg"><img src="./map/tiles/1_2.jpg"><img src="./map/tiles/2_2.jpg"><img src="./map/tiles/3_2.jpg"><img src="./map/tiles/4_2.jpg"><img src="./map/tiles/5_2.jpg">
-      <img src="./map/tiles/0_3.jpg"><img src="./map/tiles/1_3.jpg"><img src="./map/tiles/2_3.jpg"><img src="./map/tiles/3_3.jpg"><img src="./map/tiles/4_3.jpg"><img src="./map/tiles/5_3.jpg">
-    </div>
+    <img class="map-bg" src="./map/map.jpg">
     <svg class="map-overlay" viewBox="0 0 1 1" preserveAspectRatio="none" id="overlay"></svg>
+    <div class="labels-overlay" id="labels"></div>
   </div>
 </div>
 <script>
@@ -64,106 +134,232 @@ const SLOPE_COLORS = {
   BLACK: '#000000',
 };
 
-fetch('./1770682226734_troisVallees_GeospatialItems.json')
-  .then(r => r.json())
-  .then(data => {
-    const svg = document.getElementById('overlay');
-    const ns = 'http://www.w3.org/2000/svg';
+const SLOPES_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSpBHqmZDBt-pym7TU-rwUEHPvVsLWL7p5HvyRpJgAeblESvsiy_LYAR1tmPswAphrdaqs1Ch1t1mZc/pub?gid=2097097133&single=true&output=csv';
+const LIFTS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSpBHqmZDBt-pym7TU-rwUEHPvVsLWL7p5HvyRpJgAeblESvsiy_LYAR1tmPswAphrdaqs1Ch1t1mZc/pub?gid=1758790416&single=true&output=csv';
 
-    const labels = [];
-
-    // Draw slope lines
-    for (const slope of data.slopes) {
-      const color = SLOPE_COLORS[slope.slopeLevel] || '#888';
-
-      for (const path of slope.paths) {
-        const points = path.points.map(p => `${p.x},${p.y}`).join(' ');
-        const line = document.createElementNS(ns, 'polyline');
-        line.setAttribute('fill', 'none');
-        line.setAttribute('stroke', color);
-        line.setAttribute('stroke-width', '0.001');
-        line.setAttribute('stroke-linecap', 'round');
-        line.setAttribute('stroke-linejoin', 'round');
-        line.setAttribute('points', points);
-        svg.appendChild(line);
-      }
-
-      if (slope.namePosition) {
-        labels.push({ type: 'slope', color, item: slope });
-      }
-    }
-
-    // Draw lift lines
-    for (const lift of data.lifts) {
-      for (const path of lift.paths) {
-        const points = path.points.map(p => `${p.x},${p.y}`).join(' ');
-        const line = document.createElementNS(ns, 'polyline');
-        line.setAttribute('fill', 'none');
-        line.setAttribute('stroke', '#7c3aed');
-        line.setAttribute('stroke-width', '0.001');
-        line.setAttribute('stroke-linecap', 'round');
-        line.setAttribute('stroke-linejoin', 'round');
-        line.setAttribute('stroke-dasharray', '0.002,0.001');
-        line.setAttribute('points', points);
-        svg.appendChild(line);
-      }
-
-      if (lift.namePosition) {
-        labels.push({ type: 'lift', item: lift });
-      }
-    }
-
-    // Draw all labels on top
-    for (const entry of labels) {
-      const { item } = entry;
-      const np = item.namePosition;
-
-      if (entry.type === 'slope') {
-        const dot = document.createElementNS(ns, 'circle');
-        dot.setAttribute('cx', np.x);
-        dot.setAttribute('cy', np.y);
-        dot.setAttribute('r', '0.0015');
-        dot.setAttribute('fill', entry.color);
-        svg.appendChild(dot);
-      }
-
-      const text = item.name || item.shortName || '';
-      const isLift = entry.type === 'lift';
-      const fontSize = '0.0025';
-      const anchor = isLift ? 'middle' : 'start';
-      const fill = isLift ? '#7c3aed' : '#222';
-
-      const halo = document.createElementNS(ns, 'text');
-      halo.setAttribute('x', np.x);
-      halo.setAttribute('y', np.y);
-      halo.setAttribute('fill', 'none');
-      halo.setAttribute('stroke', 'white');
-      halo.setAttribute('stroke-width', '0.0005');
-      halo.setAttribute('font-size', fontSize);
-      halo.setAttribute('font-family', 'sans-serif');
-      halo.setAttribute('font-weight', 'bold');
-      halo.setAttribute('text-anchor', anchor);
-      if (isLift && item.nameRotation) {
-        halo.setAttribute('transform', `rotate(${item.nameRotation - 360}, ${np.x}, ${np.y})`);
-      }
-      halo.textContent = text;
-      svg.appendChild(halo);
-
-      const label = document.createElementNS(ns, 'text');
-      label.setAttribute('x', np.x);
-      label.setAttribute('y', np.y);
-      label.setAttribute('fill', fill);
-      label.setAttribute('font-size', fontSize);
-      label.setAttribute('font-family', 'sans-serif');
-      label.setAttribute('font-weight', 'bold');
-      label.setAttribute('text-anchor', anchor);
-      if (isLift && item.nameRotation) {
-        label.setAttribute('transform', `rotate(${item.nameRotation - 360}, ${np.x}, ${np.y})`);
-      }
-      label.textContent = text;
-      svg.appendChild(label);
-    }
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+  return lines.slice(1).map(line => {
+    const vals = line.trim().split(',').map(v => v.replace(/^"|"$/g, '').trim());
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = vals[i] || '');
+    return obj;
   });
+}
+
+async function loadCompletionData() {
+  const cacheBust = '&_t=' + Date.now();
+  const [slopesRes, liftsRes] = await Promise.all([fetch(SLOPES_CSV + cacheBust), fetch(LIFTS_CSV + cacheBust)]);
+  const slopesRows = parseCSV(await slopesRes.text());
+  const liftsRows = parseCSV(await liftsRes.text());
+
+  const status = {};
+  for (const row of [...slopesRows, ...liftsRows]) {
+    const val = (row.completed || '').trim().toLowerCase();
+    if (val === 'yes') status[row.id] = 'completed';
+    else if (val === 'na') status[row.id] = 'na';
+  }
+  return status;
+}
+
+// SVG element groups keyed by id
+const slopeElements = {};
+const liftElements = {};
+
+let slopesMode = 'all';
+let liftsMode = 'all';
+
+function updateVisibility() {
+  for (const [id, data] of Object.entries(slopeElements)) {
+    const show = slopesMode === 'all'
+      || (slopesMode === 'completed' && data.completed)
+      || (slopesMode === 'remaining' && !data.completed && !data.na);
+    for (const el of data.els) el.style.display = show ? '' : 'none';
+  }
+  for (const [id, data] of Object.entries(liftElements)) {
+    const show = liftsMode === 'all'
+      || (liftsMode === 'completed' && data.completed)
+      || (liftsMode === 'remaining' && !data.completed && !data.na);
+    for (const el of data.els) el.style.display = show ? '' : 'none';
+  }
+}
+
+function setActive(group, mode) {
+  document.querySelectorAll(`[id^="btn-${group}-"]`).forEach(b => b.classList.remove('active'));
+  document.getElementById(`btn-${group}-${mode}`).classList.add('active');
+}
+
+document.getElementById('btn-slopes-all').onclick = () => { slopesMode = 'all'; setActive('slopes', 'all'); updateVisibility(); };
+document.getElementById('btn-slopes-completed').onclick = () => { slopesMode = 'completed'; setActive('slopes', 'completed'); updateVisibility(); };
+document.getElementById('btn-slopes-remaining').onclick = () => { slopesMode = 'remaining'; setActive('slopes', 'remaining'); updateVisibility(); };
+document.getElementById('btn-slopes-hide').onclick = () => { slopesMode = 'hide'; setActive('slopes', 'hide'); updateVisibility(); };
+document.getElementById('btn-lifts-all').onclick = () => { liftsMode = 'all'; setActive('lifts', 'all'); updateVisibility(); };
+document.getElementById('btn-lifts-completed').onclick = () => { liftsMode = 'completed'; setActive('lifts', 'completed'); updateVisibility(); };
+document.getElementById('btn-lifts-remaining').onclick = () => { liftsMode = 'remaining'; setActive('lifts', 'remaining'); updateVisibility(); };
+document.getElementById('btn-lifts-hide').onclick = () => { liftsMode = 'hide'; setActive('lifts', 'hide'); updateVisibility(); };
+
+const COMPLETED_OPACITY = 0.35;
+
+async function init() {
+  // Clear previous state
+  Object.keys(slopeElements).forEach(k => delete slopeElements[k]);
+  Object.keys(liftElements).forEach(k => delete liftElements[k]);
+  document.getElementById('overlay').innerHTML = '';
+  document.getElementById('labels').innerHTML = '';
+
+  let status = {};
+  const [jsonRes] = await Promise.all([
+    fetch('./geospatialItems.json').then(r => r.json()),
+    loadCompletionData().then(s => status = s).catch(e => console.warn('Failed to load completion data:', e))
+  ]);
+
+  const svg = document.getElementById('overlay');
+  const ns = 'http://www.w3.org/2000/svg';
+
+  function smoothPath(pts) {
+    if (pts.length < 2) return '';
+    if (pts.length === 2) return `M${pts[0].x},${pts[0].y}L${pts[1].x},${pts[1].y}`;
+    let d = `M${pts[0].x},${pts[0].y}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(i - 1, 0)];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[Math.min(i + 2, pts.length - 1)];
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+      d += `C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+    }
+    return d;
+  }
+
+  // Draw slope lines
+  const taggedSlopes = jsonRes.slopes.map(s => ({ ...s, _activity: false }));
+  const taggedActivities = (jsonRes.downhillSkiingActivities || []).map(s => ({ ...s, _activity: true }));
+  const allSlopes = [...taggedSlopes, ...taggedActivities];
+  for (const slope of allSlopes) {
+    const st = status[slope.id] || 'pending';
+    const isNA = st === 'na';
+    const done = st === 'completed';
+    const color = isNA ? '#aaa' : (slope._activity ? '#eab308' : (SLOPE_COLORS[slope.slopeLevel] || '#888'));
+    const els = [];
+
+    for (const path of (slope.paths || [])) {
+      const line = document.createElementNS(ns, 'path');
+      line.setAttribute('fill', 'none');
+      line.setAttribute('stroke', color);
+      line.setAttribute('stroke-width', '0.001');
+      line.setAttribute('stroke-linecap', 'round');
+      line.setAttribute('stroke-linejoin', 'round');
+      if (done) line.setAttribute('opacity', COMPLETED_OPACITY);
+      line.setAttribute('d', smoothPath(path.points));
+      svg.appendChild(line);
+      els.push(line);
+    }
+
+    slopeElements[slope.id] = { els, completed: done, na: isNA };
+  }
+
+  // Draw lift lines
+  for (const lift of jsonRes.lifts) {
+    const st = status[lift.id] || 'pending';
+    const isNA = st === 'na';
+    const done = st === 'completed';
+    const els = [];
+
+    for (const path of (lift.paths || [])) {
+      const line = document.createElementNS(ns, 'path');
+      line.setAttribute('fill', 'none');
+      line.setAttribute('stroke', isNA ? '#aaa' : '#7c3aed');
+      line.setAttribute('stroke-width', '0.001');
+      line.setAttribute('stroke-linecap', 'round');
+      line.setAttribute('stroke-linejoin', 'round');
+      line.setAttribute('stroke-dasharray', '0.002,0.001');
+      if (done) line.setAttribute('opacity', COMPLETED_OPACITY);
+      line.setAttribute('d', smoothPath(path.points));
+      svg.appendChild(line);
+      els.push(line);
+    }
+
+    liftElements[lift.id] = { els, completed: done, na: isNA };
+  }
+
+  // Draw all labels on top (as HTML for performance)
+  const labelsDiv = document.getElementById('labels');
+  const MAP_W = 3035;
+  const MAP_H = 1610;
+
+  for (const slope of allSlopes) {
+    if (!slope.namePosition) continue;
+    const sst = status[slope.id] || 'pending';
+    const done = sst === 'completed';
+    const isNA = sst === 'na';
+    const color = (done || isNA) ? '#999' : (slope._activity ? '#eab308' : (SLOPE_COLORS[slope.slopeLevel] || '#888'));
+    const text = slope.name || slope.shortName || '';
+
+    const el = document.createElement('span');
+    el.className = 'map-label';
+    el.style.left = (slope.namePosition.x * MAP_W) + 'px';
+    el.style.top = (slope.namePosition.y * MAP_H) + 'px';
+    el.style.color = color;
+    if (done) el.style.opacity = COMPLETED_OPACITY;
+    el.textContent = text;
+    labelsDiv.appendChild(el);
+
+    if (slopeElements[slope.id]) {
+      slopeElements[slope.id].els.push(el);
+    }
+  }
+
+  for (const lift of jsonRes.lifts) {
+    if (!lift.namePosition) continue;
+    const lst = status[lift.id] || 'pending';
+    const done = lst === 'completed';
+    const isNA = lst === 'na';
+    const color = (done || isNA) ? '#999' : '#7c3aed';
+    const text = lift.name || '';
+
+    const el = document.createElement('span');
+    el.className = 'map-label';
+    el.style.left = (lift.namePosition.x * MAP_W) + 'px';
+    el.style.top = (lift.namePosition.y * MAP_H) + 'px';
+    el.style.color = color;
+    el.style.textAlign = 'center';
+    el.style.transform = 'translateX(-50%)';
+    if (done) el.style.opacity = COMPLETED_OPACITY;
+    el.textContent = text;
+    labelsDiv.appendChild(el);
+
+    if (liftElements[lift.id]) {
+      liftElements[lift.id].els.push(el);
+    }
+  }
+
+  // Stats
+  const slopesDone = Object.values(slopeElements).filter(s => s.completed).length;
+  const slopesTotal = Object.values(slopeElements).filter(s => !s.na).length;
+  document.getElementById('slopes-stats').textContent = `${slopesDone}/${slopesTotal} completed`;
+
+  const liftsDone = Object.values(liftElements).filter(l => l.completed).length;
+  const liftsTotal = Object.values(liftElements).filter(l => !l.na).length;
+  document.getElementById('lifts-stats').textContent = `${liftsDone}/${liftsTotal} completed`;
+}
+
+document.getElementById('btn-refresh').onclick = async () => {
+  const btn = document.getElementById('btn-refresh');
+  btn.textContent = 'Refreshing...';
+  btn.disabled = true;
+  try {
+    await init();
+  } finally {
+    btn.textContent = 'Refresh Data';
+    btn.disabled = false;
+  }
+};
+
+init().catch(e => console.error('Init failed:', e));
 
 // Pan & zoom
 const viewport = document.getElementById('viewport');
