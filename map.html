@@ -167,8 +167,17 @@ async function loadCompletionData() {
 const slopeElements = {};
 const liftElements = {};
 
-let slopesMode = 'all';
-let liftsMode = 'all';
+const params = new URLSearchParams(window.location.search);
+let slopesMode = params.get('slopes') || 'all';
+let liftsMode = params.get('lifts') || 'all';
+
+function updateURL() {
+  const p = new URLSearchParams();
+  if (slopesMode !== 'all') p.set('slopes', slopesMode);
+  if (liftsMode !== 'all') p.set('lifts', liftsMode);
+  const qs = p.toString();
+  history.replaceState(null, '', qs ? '?' + qs : window.location.pathname);
+}
 
 function updateVisibility() {
   for (const [id, data] of Object.entries(slopeElements)) {
@@ -190,14 +199,26 @@ function setActive(group, mode) {
   document.getElementById(`btn-${group}-${mode}`).classList.add('active');
 }
 
-document.getElementById('btn-slopes-all').onclick = () => { slopesMode = 'all'; setActive('slopes', 'all'); updateVisibility(); };
-document.getElementById('btn-slopes-completed').onclick = () => { slopesMode = 'completed'; setActive('slopes', 'completed'); updateVisibility(); };
-document.getElementById('btn-slopes-remaining').onclick = () => { slopesMode = 'remaining'; setActive('slopes', 'remaining'); updateVisibility(); };
-document.getElementById('btn-slopes-hide').onclick = () => { slopesMode = 'hide'; setActive('slopes', 'hide'); updateVisibility(); };
-document.getElementById('btn-lifts-all').onclick = () => { liftsMode = 'all'; setActive('lifts', 'all'); updateVisibility(); };
-document.getElementById('btn-lifts-completed').onclick = () => { liftsMode = 'completed'; setActive('lifts', 'completed'); updateVisibility(); };
-document.getElementById('btn-lifts-remaining').onclick = () => { liftsMode = 'remaining'; setActive('lifts', 'remaining'); updateVisibility(); };
-document.getElementById('btn-lifts-hide').onclick = () => { liftsMode = 'hide'; setActive('lifts', 'hide'); updateVisibility(); };
+// Set initial button states from URL
+setActive('slopes', slopesMode);
+setActive('lifts', liftsMode);
+
+function setMode(group, mode) {
+  if (group === 'slopes') slopesMode = mode;
+  else liftsMode = mode;
+  setActive(group, mode);
+  updateVisibility();
+  updateURL();
+}
+
+document.getElementById('btn-slopes-all').onclick = () => setMode('slopes', 'all');
+document.getElementById('btn-slopes-completed').onclick = () => setMode('slopes', 'completed');
+document.getElementById('btn-slopes-remaining').onclick = () => setMode('slopes', 'remaining');
+document.getElementById('btn-slopes-hide').onclick = () => setMode('slopes', 'hide');
+document.getElementById('btn-lifts-all').onclick = () => setMode('lifts', 'all');
+document.getElementById('btn-lifts-completed').onclick = () => setMode('lifts', 'completed');
+document.getElementById('btn-lifts-remaining').onclick = () => setMode('lifts', 'remaining');
+document.getElementById('btn-lifts-hide').onclick = () => setMode('lifts', 'hide');
 
 const COMPLETED_OPACITY = 0.35;
 
@@ -345,6 +366,8 @@ async function init() {
   const liftsDone = Object.values(liftElements).filter(l => l.completed).length;
   const liftsTotal = Object.values(liftElements).filter(l => !l.na).length;
   document.getElementById('lifts-stats').textContent = `${liftsDone}/${liftsTotal} completed`;
+
+  updateVisibility();
 }
 
 document.getElementById('btn-refresh').onclick = async () => {
