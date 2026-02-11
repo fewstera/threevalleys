@@ -12,6 +12,7 @@
     height: 100vh;
     overflow: hidden;
     cursor: grab;
+    touch-action: none;
   }
   #viewport.grabbing { cursor: grabbing; }
   .map-container {
@@ -53,16 +54,39 @@
     white-space: nowrap;
     text-shadow: -1px 0 1px white, 1px 0 1px white, 0 -1px 1px white, 0 1px 1px white, -1px -1px 1px white, 1px -1px 1px white, -1px 1px 1px white, 1px 1px 1px white;
   }
+  #toggle-controls {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 11;
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.92);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    cursor: pointer;
+    font-size: 20px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: #555;
+  }
   #controls {
     position: fixed;
     top: 12px;
-    right: 12px;
+    left: 12px;
     z-index: 10;
     display: flex;
     flex-direction: column;
     gap: 6px;
     font-family: sans-serif;
     font-size: 13px;
+  }
+  @media (max-width: 768px) {
+    #toggle-controls { display: flex; }
+    #controls { display: none; top: 60px; }
+    #controls.open { display: flex; }
   }
   #controls .group {
     background: rgba(255,255,255,0.92);
@@ -100,6 +124,7 @@
 </style>
 </head>
 <body>
+<button id="toggle-controls" onclick="document.getElementById('controls').classList.toggle('open')">&#9881;</button>
 <div id="controls">
   <div class="group">
     <div class="group-title">Slopes</div>
@@ -456,6 +481,55 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('mouseup', () => {
   isDragging = false;
   viewport.classList.remove('grabbing');
+});
+
+// Touch pan & pinch-to-zoom
+let lastTouches = null;
+
+viewport.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  lastTouches = [...e.touches];
+  if (e.touches.length === 1) {
+    isDragging = true;
+    startX = e.touches[0].clientX - panX;
+    startY = e.touches[0].clientY - panY;
+  }
+}, { passive: false });
+
+viewport.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (e.touches.length === 1 && isDragging) {
+    panX = e.touches[0].clientX - startX;
+    panY = e.touches[0].clientY - startY;
+    applyTransform();
+  } else if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+    // Pinch zoom
+    const prevDist = Math.hypot(
+      lastTouches[0].clientX - lastTouches[1].clientX,
+      lastTouches[0].clientY - lastTouches[1].clientY
+    );
+    const curDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+
+    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+
+    const prevScale = scale;
+    const minScale = Math.max(window.innerWidth / MAP_W, window.innerHeight / MAP_H);
+    scale = Math.min(Math.max(scale * (curDist / prevDist), minScale), 5);
+
+    panX = midX - (midX - panX) * (scale / prevScale);
+    panY = midY - (midY - panY) * (scale / prevScale);
+    applyTransform();
+  }
+  lastTouches = [...e.touches];
+}, { passive: false });
+
+viewport.addEventListener('touchend', (e) => {
+  isDragging = false;
+  lastTouches = e.touches.length > 0 ? [...e.touches] : null;
 });
 
 // Fit map to viewport on load
